@@ -121,6 +121,13 @@ class KeyboardGestureAreaReactViewGroup(
 
     if (isHandling) {
       if (controller.isInsetAnimationInProgress()) {
+        if (controller.isInsetAnimationFinishing()) {
+          // A spring animation is settling the keyboard - don't fight it with touch moves
+          lastTouchY = event.y
+          lastTouchX = event.x
+          lastWindowY = bounds.top
+          return
+        }
         if (keyboardHeight == 0) {
           this.keyboardHeight = controller.getCurrentKeyboardHeight()
         }

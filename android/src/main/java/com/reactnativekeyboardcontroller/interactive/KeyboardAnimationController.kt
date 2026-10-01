@@ -267,6 +267,11 @@ internal class KeyboardAnimationController {
       return
     }
 
+    // A spring animation is already settling the keyboard - don't start another one
+    if (isInsetAnimationFinishing()) {
+      return
+    }
+
     InteractiveKeyboardProvider.isInteractive = false
 
     val current = controller.currentInsets.bottom
@@ -356,10 +361,22 @@ internal class KeyboardAnimationController {
       insetsAnimationController
         ?: throw IllegalStateException("Controller should not be null")
 
+    // Cancel any previous spring animation before starting a new one. Otherwise the
+    // previous spring would be orphaned (no longer referenced by `currentSpringAnimation`),
+    // `reset()` would not be able to cancel it, and it would keep calling `insetTo()`
+    // after the controller has been released.
+    val previousSpringAnimation = currentSpringAnimation
+    currentSpringAnimation = null
+    previousSpringAnimation?.cancel()
+
     currentSpringAnimation =
       springAnimationOf(
         setter = {
-          insetTo(it.roundToInt())
+          // The controller may have been released (finished/cancelled by the system)
+          // while a frame was still scheduled - skip such stale frames.
+          if (isInsetAnimationInProgress()) {
+            insetTo(it.roundToInt())
+          }
         },
         getter = { controller.currentInsets.bottom.toFloat() },
         finalPosition =
@@ -379,9 +396,11 @@ internal class KeyboardAnimationController {
           setStartVelocity(velocityY)
         }
         addEndListener { anim, _, _, _ ->
-          if (anim == currentSpringAnimation) {
-            currentSpringAnimation = null
+          // Ignore end events from springs that were replaced by a newer one
+          if (anim != currentSpringAnimation) {
+            return@addEndListener
           }
+          currentSpringAnimation = null
           // Once the animation has ended, finish the controller
           finish()
         }
